@@ -37,7 +37,7 @@ Dependencies:
 
 # Run:
 
-python HpyerAttentionDTI_main.py
+python AttentionDTA_main.py
 
 python Learning_rate_select.py
 

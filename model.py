@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
+
 class mutil_head_attention(nn.Module):
     def __init__(self,head = 8,conv=32):
         super(mutil_head_attention,self).__init__()
@@ -11,14 +13,14 @@ class mutil_head_attention(nn.Module):
         self.tanh = nn.Tanh()
         self.d_a = nn.Linear(self.conv * 3, self.conv * 3 * head)
         self.p_a = nn.Linear(self.conv * 3, self.conv * 3 * head)
-        self.scale = torch.sqrt(torch.FloatTensor([self.conv * 3])).cuda()
+        self.scale = torch.sqrt(torch.FloatTensor([self.conv * 3])).to(device)
 
     def forward(self, drug, protein):
         bsz, d_ef,d_il = drug.shape
         bsz, p_ef, p_il = protein.shape
         drug_att = self.relu(self.d_a(drug.permute(0, 2, 1))).view(bsz,self.head,d_il,d_ef)
         protein_att = self.relu(self.p_a(protein.permute(0, 2, 1))).view(bsz,self.head,p_il,p_ef)
-        interaction_map = torch.mean(self.tanh(torch.matmul(drug_att, protein_att.permute(0, 1, 3, 2)) / self.scale),1)
+        interaction_map = torch.mean(self.tanh(torch.matmul(drug_att, protein_att.permute(0, 1, 3, 2)) / self.scale.to(drug.device)),1)
         Compound_atte = self.tanh(torch.sum(interaction_map, 2)).unsqueeze(1)
         Protein_atte = self.tanh(torch.sum(interaction_map, 1)).unsqueeze(1)
         drug = drug * Compound_atte

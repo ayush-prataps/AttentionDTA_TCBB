@@ -19,6 +19,8 @@ import torch.optim as optim
 # from utils import rmse_f, mse_f, pearson_f, spearman_f, ci_f
 from sklearn.metrics import mean_squared_error,mean_absolute_error,r2_score
 
+device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
+
 def test_precess(model,pbar):
     loss_f = nn.MSELoss()
     model.eval()
@@ -29,9 +31,9 @@ def test_precess(model,pbar):
         for i, data in pbar:
             '''data preparation '''
             compounds,proteins, labels = data
-            compounds = compounds.cuda()
-            proteins = proteins.cuda()
-            labels = labels.cuda()
+            compounds = compounds.to(device)
+            proteins = proteins.to(device)
+            labels = labels.to(device)
             predicts= model.forward(compounds,  proteins)
             loss = loss_f(predicts, labels.view(-1, 1))
             total_preds = torch.cat((total_preds, predicts.cpu()), 0)
@@ -104,7 +106,7 @@ if __name__ == "__main__":
                                             collate_fn=collate_fn)
 
     """ create model"""
-    model = AttentionDTA().cuda()
+    model = AttentionDTA().to(device)
     """weight initialize"""
     weight_p, bias_p = [], []
     for p in model.parameters():
@@ -135,9 +137,9 @@ if __name__ == "__main__":
         for trian_i, train_data in trian_pbar:
             '''data preparation '''
             trian_compounds, trian_proteins, trian_labels = train_data
-            trian_compounds = trian_compounds.cuda()
-            trian_proteins = trian_proteins.cuda()
-            trian_labels = trian_labels.cuda()
+            trian_compounds = trian_compounds.to(device)
+            trian_proteins = trian_proteins.to(device)
+            trian_labels = trian_labels.to(device)
             optimizer.zero_grad()
             # 正向传播，反向传播，优化
             predicts = model.forward(trian_compounds, trian_proteins)

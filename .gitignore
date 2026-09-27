@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+Results/
+results/
+hyperparameter/
+.DS_Store

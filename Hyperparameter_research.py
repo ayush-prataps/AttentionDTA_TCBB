@@ -19,6 +19,8 @@ import torch.optim as optim
 # from utils import rmse_f, mse_f, pearson_f, spearman_f, ci_f
 from sklearn.metrics import mean_squared_error,mean_absolute_error,r2_score
 
+device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
+
 def test_precess(model,pbar):
     loss_f = nn.MSELoss()
     model.eval()
@@ -29,9 +31,9 @@ def test_precess(model,pbar):
         for i, data in pbar:
             '''data preparation '''
             compounds,proteins, labels = data
-            compounds = compounds.cuda()
-            proteins = proteins.cuda()
-            labels = labels.cuda()
+            compounds = compounds.to(device)
+            proteins = proteins.to(device)
+            labels = labels.to(device)
             predicts= model.forward(compounds,  proteins)
             loss = loss_f(predicts, labels.view(-1, 1))
             total_preds = torch.cat((total_preds, predicts.cpu()), 0)
@@ -112,7 +114,7 @@ if __name__ == "__main__":
         test_dataset_load = DataLoader(test_dataset, batch_size=128, shuffle=False, num_workers=2,
                                         collate_fn=collate_fn)
         """ create model"""
-        model = AttentionDTA(head_num = head_num).cuda()
+        model = AttentionDTA(head_num = head_num).to(device)
         """weight initialize"""
         weight_p, bias_p = [], []
         for p in model.parameters():
@@ -144,9 +146,9 @@ if __name__ == "__main__":
             for trian_i, train_data in trian_pbar:
                 '''data preparation '''
                 trian_compounds, trian_proteins, trian_labels = train_data
-                trian_compounds = trian_compounds.cuda()
-                trian_proteins = trian_proteins.cuda()
-                trian_labels = trian_labels.cuda()
+                trian_compounds = trian_compounds.to(device)
+                trian_proteins = trian_proteins.to(device)
+                trian_labels = trian_labels.to(device)
                 '''前向传播与反向传播'''
                 '''梯度置0'''
                 optimizer.zero_grad()
@@ -173,9 +175,9 @@ if __name__ == "__main__":
                     '''data preparation '''
                     valid_compounds, valid_proteins, valid_labels = valid_data
 
-                    valid_compounds = valid_compounds.cuda()
-                    valid_proteins = valid_proteins.cuda()
-                    valid_labels = valid_labels.cuda()
+                    valid_compounds = valid_compounds.to(device)
+                    valid_proteins = valid_proteins.to(device)
+                    valid_labels = valid_labels.to(device)
                     valid_predictions = model.forward(valid_compounds, valid_proteins)
                     valid_loss = LOSS_F(valid_predictions, valid_labels.view(-1, 1))
                     valid_losses_in_epoch.append(valid_loss.item())
@@ -242,7 +244,7 @@ if __name__ == "__main__":
         test_dataset_load = DataLoader(test_dataset, batch_size=128, shuffle=False, num_workers=2,
                                        collate_fn=collate_fn)
         """ create model"""
-        model = AttentionDTA(head_num=best_head_num).cuda()
+        model = AttentionDTA(head_num=best_head_num).to(device)
         """weight initialize"""
         weight_p, bias_p = [], []
         for p in model.parameters():
@@ -275,9 +277,9 @@ if __name__ == "__main__":
             for trian_i, train_data in trian_pbar:
                 '''data preparation '''
                 trian_compounds, trian_proteins, trian_labels = train_data
-                trian_compounds = trian_compounds.cuda()
-                trian_proteins = trian_proteins.cuda()
-                trian_labels = trian_labels.cuda()
+                trian_compounds = trian_compounds.to(device)
+                trian_proteins = trian_proteins.to(device)
+                trian_labels = trian_labels.to(device)
                 '''前向传播与反向传播'''
                 '''梯度置0'''
                 optimizer.zero_grad()
@@ -304,9 +306,9 @@ if __name__ == "__main__":
                     '''data preparation '''
                     valid_compounds, valid_proteins, valid_labels = valid_data
 
-                    valid_compounds = valid_compounds.cuda()
-                    valid_proteins = valid_proteins.cuda()
-                    valid_labels = valid_labels.cuda()
+                    valid_compounds = valid_compounds.to(device)
+                    valid_proteins = valid_proteins.to(device)
+                    valid_labels = valid_labels.to(device)
                     valid_predictions = model.forward(valid_compounds, valid_proteins)
                     valid_loss = LOSS_F(valid_predictions, valid_labels.view(-1, 1))
                     valid_losses_in_epoch.append(valid_loss.item())
@@ -374,7 +376,7 @@ if __name__ == "__main__":
         test_dataset_load = DataLoader(test_dataset, batch_size=128, shuffle=False, num_workers=2,
                                        collate_fn=collate_fn)
         """ create model"""
-        model = AttentionDTA(head_num=best_head_num,dropout_rate = dropout_rate).cuda()
+        model = AttentionDTA(head_num=best_head_num,dropout_rate = dropout_rate).to(device)
         """weight initialize"""
         weight_p, bias_p = [], []
         for p in model.parameters():
@@ -407,9 +409,9 @@ if __name__ == "__main__":
             for trian_i, train_data in trian_pbar:
                 '''data preparation '''
                 trian_compounds, trian_proteins, trian_labels = train_data
-                trian_compounds = trian_compounds.cuda()
-                trian_proteins = trian_proteins.cuda()
-                trian_labels = trian_labels.cuda()
+                trian_compounds = trian_compounds.to(device)
+                trian_proteins = trian_proteins.to(device)
+                trian_labels = trian_labels.to(device)
                 '''前向传播与反向传播'''
                 '''梯度置0'''
                 optimizer.zero_grad()
@@ -436,9 +438,9 @@ if __name__ == "__main__":
                     '''data preparation '''
                     valid_compounds, valid_proteins, valid_labels = valid_data
 
-                    valid_compounds = valid_compounds.cuda()
-                    valid_proteins = valid_proteins.cuda()
-                    valid_labels = valid_labels.cuda()
+                    valid_compounds = valid_compounds.to(device)
+                    valid_proteins = valid_proteins.to(device)
+                    valid_labels = valid_labels.to(device)
                     valid_predictions = model.forward(valid_compounds, valid_proteins)
                     valid_loss = LOSS_F(valid_predictions, valid_labels.view(-1, 1))
                     valid_losses_in_epoch.append(valid_loss.item())
