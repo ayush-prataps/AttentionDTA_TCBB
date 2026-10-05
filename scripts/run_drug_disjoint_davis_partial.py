@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import sys
 
@@ -21,6 +22,11 @@ from drug_disjoint_davis import DATASET_PATH, load_rows, make_split
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
+DEFAULT_OUTPUT_DIR = (
+    Path("/kaggle/working/drug_disjoint_davis")
+    if os.environ.get("KAGGLE_KERNEL_RUN_TYPE")
+    else ROOT / "results" / "Davis" / "drug_disjoint_partial"
+)
 
 
 def evaluate(model: nn.Module, loader: DataLoader) -> tuple[float, float, float]:
@@ -50,7 +56,7 @@ def main() -> None:
         "--output",
         dest="output_dir",
         type=Path,
-        default=ROOT / "results" / "Davis" / "drug_disjoint_partial",
+        default=DEFAULT_OUTPUT_DIR,
         help="Directory for results and resumable checkpoints (for example, a Google Drive path).",
     )
     args = parser.parse_args()

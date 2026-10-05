@@ -22,6 +22,7 @@ import torch.optim as optim
 from sklearn.metrics import mean_squared_error,mean_absolute_error,r2_score
 
 device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
+DEFAULT_OUTPUT_DIR = Path("/kaggle/working") if os.environ.get("KAGGLE_KERNEL_RUN_TYPE") else Path("./results")
 
 def test_precess(model,pbar):
     loss_f = nn.MSELoss()
@@ -92,10 +93,27 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("./results"),
+        default=DEFAULT_OUTPUT_DIR,
         help="Base directory for results and resumable checkpoints (for example, a Google Drive path).",
     )
+    parser.add_argument(
+        "--folds",
+        type=int,
+        default=5,
+        help="Number of independently shuffled cross-validation groups (default: 5).",
+    )
+    parser.add_argument(
+        "--max-folds",
+        type=int,
+        default=None,
+        help="Number of folds to run, starting at fold 1 (default: same as --folds).",
+    )
     args = parser.parse_args()
+    if args.folds < 2:
+        parser.error("--folds must be at least 2")
+    max_folds = args.folds if args.max_folds is None else args.max_folds
+    if not 1 <= max_folds <= args.folds:
+        parser.error("--max-folds must be between 1 and --folds")
     """select seed"""
     SEED = 4321
     random.seed(SEED)
@@ -116,14 +134,15 @@ if __name__ == "__main__":
     print("data shuffle")
     dataset = shuffle_dataset(cpi_list, SEED)
     # random.shuffle(cpi_list)
-    K_Fold = 5
+    K_Fold = args.folds
     Batch_size = 128
     weight_decay = 1e-4
     Learning_rate = 5e-5
     Patience = 50
     Epoch = 500
     """Output files."""
-    save_path = str(args.output_dir / DATASET) + "/"
+    experiment_name = DATASET if args.folds == 5 else "{}_{}fold".format(DATASET, args.folds)
+    save_path = str(args.output_dir / experiment_name) + "/"
     if not os.path.exists(save_path):
         os.makedirs(save_path)
     file_results = save_path + 'The_results.txt'
@@ -138,7 +157,7 @@ if __name__ == "__main__":
 
     MSE_List, MAE_List, R2_List = [], [], []
 
-    for i_fold in range(K_Fold):
+    for i_fold in range(max_folds):
         print('*' * 25, '第', i_fold + 1, '折', '*' * 25)
         trainset, testset = get_kfold_data(i_fold, dataset, k=K_Fold)
         TVdataset = CustomDataSet(trainset)
@@ -324,11 +343,10 @@ if __name__ == "__main__":
     print('MSE(std):{:.4f}({:.4f})'.format(MSE_mean, MSE_var))
     print('MAE(std):{:.4f}({:.4f})'.format(MAE_mean, MAE_var))
     print('R2(std):{:.4f}({:.4f})'.format(R2_mean, R2_var))
-    torch.save({
-        "mse_mean": MSE_mean, "mse_std": MSE_var,
-        "mae_mean": MAE_mean, "mae_std": MAE_var,
-        "r2_mean": R2_mean, "r2_std": R2_var,
-    }, run_complete_path)
-
-
+    if max_folds == args.folds:
+        torch.save({
+            "mse_mean": MSE_mean, "mse_std": MSE_var,
+            "mae_mean": MAE_mean, "mae_std": MAE_var,
+            "r2_mean": R2_mean, "r2_std": R2_var,
+        }, run_complete_path)
 
