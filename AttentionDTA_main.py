@@ -3,8 +3,10 @@
 @Time:Created on 2020/7/05
 @author: Qichang Zhao
 """
+import argparse
 import random,os
 from datetime import datetime
+from pathlib import Path
 from dataset import CustomDataSet, collate_fn
 from model import AttentionDTA
 from torch.utils.data import DataLoader
@@ -86,6 +88,14 @@ def shuffle_dataset(dataset, seed):
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Train the official AttentionDTA five-fold Davis experiment.")
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("./results"),
+        help="Base directory for results and resumable checkpoints (for example, a Google Drive path).",
+    )
+    args = parser.parse_args()
     """select seed"""
     SEED = 4321
     random.seed(SEED)
@@ -113,10 +123,18 @@ if __name__ == "__main__":
     Patience = 50
     Epoch = 500
     """Output files."""
-    save_path = "./results/{}/".format(DATASET)
+    save_path = str(args.output_dir / DATASET) + "/"
     if not os.path.exists(save_path):
         os.makedirs(save_path)
     file_results = save_path + 'The_results.txt'
+    run_complete_path = Path(save_path) / "run_complete.pth"
+    if run_complete_path.exists():
+        completed_run = torch.load(run_complete_path, map_location="cpu", weights_only=False)
+        print("Training already completed; remove {} to run this output directory again.".format(run_complete_path))
+        print('MSE(std):{:.4f}({:.4f})'.format(completed_run["mse_mean"], completed_run["mse_std"]))
+        print('MAE(std):{:.4f}({:.4f})'.format(completed_run["mae_mean"], completed_run["mae_std"]))
+        print('R2(std):{:.4f}({:.4f})'.format(completed_run["r2_mean"], completed_run["r2_std"]))
+        raise SystemExit(0)
 
     MSE_List, MAE_List, R2_List = [], [], []
 
@@ -158,6 +176,15 @@ if __name__ == "__main__":
         save_path_i = "{}/{}_Fold/".format(save_path, i_fold + 1)
         if not os.path.exists(save_path_i):
             os.makedirs(save_path_i)
+        resume_checkpoint_path = Path(save_path_i) / "resume_checkpoint.pth"
+        fold_complete_path = Path(save_path_i) / "fold_complete.pth"
+        if fold_complete_path.exists():
+            completed_fold = torch.load(fold_complete_path, map_location="cpu", weights_only=False)
+            print("Fold {} already completed; skipping.".format(i_fold + 1))
+            MSE_List.append(completed_fold["mse"])
+            MAE_List.append(completed_fold["mae"])
+            R2_List.append(completed_fold["r2"])
+            continue
         note = ""
         writer = SummaryWriter(log_dir=save_path_i, comment=note)
 
@@ -166,7 +193,22 @@ if __name__ == "__main__":
         start = timeit.default_timer()
         patience = 0
         best_score = 100
-        for epoch in range(1, Epoch + 1):
+        start_epoch = 1
+        if resume_checkpoint_path.exists():
+            resume_checkpoint = torch.load(resume_checkpoint_path, map_location=device, weights_only=False)
+            model.load_state_dict(resume_checkpoint["model_state_dict"])
+            optimizer.load_state_dict(resume_checkpoint["optimizer_state_dict"])
+            scheduler.load_state_dict(resume_checkpoint["scheduler_state_dict"])
+            best_score = resume_checkpoint["best_score"]
+            patience = resume_checkpoint["patience"]
+            start_epoch = resume_checkpoint["epoch"] + 1
+            random.setstate(resume_checkpoint["python_rng_state"])
+            np.random.set_state(resume_checkpoint["numpy_rng_state"])
+            torch.set_rng_state(resume_checkpoint["torch_rng_state"])
+            if torch.cuda.is_available() and resume_checkpoint["cuda_rng_state_all"] is not None:
+                torch.cuda.set_rng_state_all(resume_checkpoint["cuda_rng_state_all"])
+            print("Resuming fold {} from epoch {}.".format(i_fold + 1, start_epoch))
+        for epoch in range(start_epoch, Epoch + 1):
             trian_pbar = tqdm(
                 enumerate(
                     BackgroundGenerator(train_dataset_load)),
@@ -240,11 +282,24 @@ if __name__ == "__main__":
             writer.add_scalar('Valid MAE', valid_MAE, epoch)
             writer.add_scalar('Valid R2', valid_R2, epoch)
 
+            torch.save({
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "best_score": best_score,
+                "patience": patience,
+                "python_rng_state": random.getstate(),
+                "numpy_rng_state": np.random.get_state(),
+                "torch_rng_state": torch.get_rng_state(),
+                "cuda_rng_state_all": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+            }, resume_checkpoint_path)
+
             if patience == Patience:
                 break
         torch.save(model.state_dict(), save_path_i + 'stable_checkpoint.pth')
         """load trained model"""
-        model.load_state_dict(torch.load(save_path_i + "valid_best_checkpoint.pth"))
+        model.load_state_dict(torch.load(save_path_i + "valid_best_checkpoint.pth", map_location=device))
         trainset_test_results,_,_,_ = test_model(train_dataset_load, save_path_i, DATASET, lable="Train")
         validset_test_results,_,_,_ = test_model(valid_dataset_load, save_path_i, DATASET, lable="Valid")
         testset_test_results,mse_test, mae_test, r2_test = test_model(test_dataset_load,save_path_i,DATASET,lable="Test")
@@ -257,6 +312,7 @@ if __name__ == "__main__":
         MSE_List.append(mse_test)
         MAE_List.append(mae_test)
         R2_List.append(r2_test)
+        torch.save({"mse": mse_test, "mae": mae_test, "r2": r2_test}, fold_complete_path)
     MSE_mean, MSE_var = np.mean(MSE_List), np.sqrt(np.var(MSE_List))
     MAE_mean, MAE_var = np.mean(MAE_List), np.sqrt(np.var(MAE_List))
     R2_mean, R2_var = np.mean(R2_List), np.sqrt(np.var(R2_List))
@@ -268,7 +324,11 @@ if __name__ == "__main__":
     print('MSE(std):{:.4f}({:.4f})'.format(MSE_mean, MSE_var))
     print('MAE(std):{:.4f}({:.4f})'.format(MAE_mean, MAE_var))
     print('R2(std):{:.4f}({:.4f})'.format(R2_mean, R2_var))
-
+    torch.save({
+        "mse_mean": MSE_mean, "mse_std": MSE_var,
+        "mae_mean": MAE_mean, "mae_std": MAE_var,
+        "r2_mean": R2_mean, "r2_std": R2_var,
+    }, run_complete_path)
 
 
 

@@ -45,7 +45,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--seed", type=int, default=4321)
-    parser.add_argument("--output", type=Path, default=ROOT / "results" / "Davis" / "drug_disjoint_partial")
+    parser.add_argument(
+        "--output-dir",
+        "--output",
+        dest="output_dir",
+        type=Path,
+        default=ROOT / "results" / "Davis" / "drug_disjoint_partial",
+        help="Directory for results and resumable checkpoints (for example, a Google Drive path).",
+    )
     args = parser.parse_args()
 
     if args.epochs < 1:
@@ -85,10 +92,24 @@ def main() -> None:
     )
     loss_function = nn.MSELoss()
     best_validation_mse = float("inf")
-    args.output.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = args.output / "valid_best_checkpoint.pth"
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = args.output_dir / "valid_best_checkpoint.pth"
+    resume_checkpoint_path = args.output_dir / "resume_checkpoint.pth"
+    start_epoch = 1
+    if resume_checkpoint_path.exists():
+        resume_checkpoint = torch.load(resume_checkpoint_path, map_location=device, weights_only=False)
+        model.load_state_dict(resume_checkpoint["model_state_dict"])
+        optimizer.load_state_dict(resume_checkpoint["optimizer_state_dict"])
+        scheduler.load_state_dict(resume_checkpoint["scheduler_state_dict"])
+        best_validation_mse = resume_checkpoint["best_validation_mse"]
+        start_epoch = resume_checkpoint["epoch"] + 1
+        np.random.set_state(resume_checkpoint["numpy_rng_state"])
+        torch.set_rng_state(resume_checkpoint["torch_rng_state"])
+        if torch.cuda.is_available() and resume_checkpoint["cuda_rng_state_all"] is not None:
+            torch.cuda.set_rng_state_all(resume_checkpoint["cuda_rng_state_all"])
+        print(f"Resuming from epoch {start_epoch}.")
 
-    for epoch in range(1, args.epochs + 1):
+    for epoch in range(start_epoch, args.epochs + 1):
         model.train()
         train_losses = []
         for compounds, proteins, labels in train_loader:
@@ -110,6 +131,19 @@ def main() -> None:
         if validation_mse < best_validation_mse:
             best_validation_mse = validation_mse
             torch.save(model.state_dict(), checkpoint_path)
+        torch.save(
+            {
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "best_validation_mse": best_validation_mse,
+                "numpy_rng_state": np.random.get_state(),
+                "torch_rng_state": torch.get_rng_state(),
+                "cuda_rng_state_all": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+            },
+            resume_checkpoint_path,
+        )
 
     model.load_state_dict(torch.load(checkpoint_path, map_location=device))
     test_mse, test_mae, test_r2 = evaluate(model, test_loader)
@@ -119,6 +153,7 @@ def main() -> None:
     print(f"train_drugs={len(train_drugs)} test_drugs={len(test_drugs)}")
     print(f"test_mse={test_mse:.8f} test_mae={test_mae:.8f} test_r2={test_r2:.8f}")
     print(f"checkpoint={checkpoint_path}")
+    print(f"resume_checkpoint={resume_checkpoint_path}")
 
 
 if __name__ == "__main__":
